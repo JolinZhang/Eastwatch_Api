@@ -1,9 +1,11 @@
 package com.eastwatch.api.Entity;
 
+import java.io.Serializable;
+
 /**
  * Created by Jonelezhang on 1/17/18.
  */
-public class EpisodeInfo{
+public class EpisodeInfo implements Serializable {
     private int season;
     private int number;
     private String title;

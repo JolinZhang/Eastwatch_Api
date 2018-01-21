@@ -1,10 +1,12 @@
 package com.eastwatch.api.Entity;
 
+import java.io.Serializable;
+
 /**
  * Created by Jonelezhang on 1/17/18.
  */
 
-    public class ShowInfo{
+    public class ShowInfo implements Serializable {
 
         public ShowInfo(){
 

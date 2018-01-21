@@ -1,9 +1,11 @@
 package com.eastwatch.api.Entity;
 
+import java.io.Serializable;
+
 /**
  * Created by Jonelezhang on 1/17/18.
  */
-public class Ids{
+public class Ids implements Serializable {
 
     private int trakt;
     private String slug;

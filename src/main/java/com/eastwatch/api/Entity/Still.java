@@ -1,9 +1,11 @@
 package com.eastwatch.api.Entity;
 
+import java.io.Serializable;
+
 /**
  * Created by Jonelezhang on 1/17/18.
  */
-public class Still{
+public class Still implements Serializable {
     private double  aspect_ratio;
     private String  file_path;
     private  int height;
