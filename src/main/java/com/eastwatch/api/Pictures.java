@@ -1,7 +1,8 @@
 package com.eastwatch.api;
 
 import com.eastwatch.api.Entity.*;
-import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Type;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import org.glassfish.jersey.client.ClientResponse;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -21,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.lang.reflect.Type;
 import java.util.*;
 
 /**
@@ -75,7 +77,7 @@ public class Pictures extends JedisConnection{
 
             List<EpisodeImage> episodeImages = new ArrayList<EpisodeImage>();
             for (String s : result) {
-                episodeImages.add(deserialization(s));
+                episodeImages.add(gsonDeserialization(new EpisodeImage(), s));
             }
 
             episodeImageList = new EpisodeImageList(tmdbInfo.getTv(), tmdbInfo.getTmdb(), tmdbInfo.getSeason(), episodeImages);
@@ -83,6 +85,9 @@ public class Pictures extends JedisConnection{
         return episodeImageList;
     }
 
+    /**
+     * Api request to get show's tmdb and number of episodes
+     * */
 
     public TmdbInfo apiTmdbInfo(int tv, int season){
         //Api request to get shows info
@@ -105,6 +110,9 @@ public class Pictures extends JedisConnection{
 
     }
 
+    /**
+     * Api requst to get imgs info for all episode under a season.
+     * */
     public Map<Integer, Map<String, String>> appImagesList(TmdbInfo tmdbInfo, List<Integer> episodeIds){
         //Api request for getting each episode image info
         String key = "94ca141ea826a21f5802fc9dae837698";
@@ -121,13 +129,35 @@ public class Pictures extends JedisConnection{
             imageResponse.setEpisodeId(i);
             String jedisKey = Integer.toString(tmdbInfo.getTv())+"#"+Integer.toString(tmdbInfo.getSeason())+"#"+ Integer.toString(i);
             Map<String, String>  temp = new HashMap<>();
-            temp.put(jedisKey, serialization(imageResponse));
+            temp.put(jedisKey, gsonSerialization(imageResponse));
             result.put(i, temp);
         }
         return result;
     }
 
-    /*
+
+    /**
+     * Use Gson library to serialize an object to string
+     */
+
+    public <T>String gsonSerialization(T myObject){
+        Gson gson = new Gson();
+        Type type = new TypeToken<T>() {}.getType();
+        String json = gson.toJson(myObject, type);
+        return json;
+    }
+
+    /**
+     * Use Gson library to deserialize a string to object
+     * */
+    public <T> T gsonDeserialization(T myobject, String json){
+        Gson gson = new Gson();
+        Type type = new TypeToken<T>() {}.getType();
+        T fromJson = gson.fromJson(json, type);
+        return fromJson;
+    }
+
+    /**
     * serialize of an object to string
     * */
     public String serialization(EpisodeImage myObject){
@@ -146,7 +176,7 @@ public class Pictures extends JedisConnection{
         return serializedObject;
     }
 
-    /*
+    /**
     * Descrialization of a string to an object
     * */
     public <T> T deserialization(String serializedObject){

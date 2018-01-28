@@ -39,5 +39,6 @@ import java.io.Serializable;
         public void setIds(Ids ids) {
             this.ids = ids;
         }
+
     }
 

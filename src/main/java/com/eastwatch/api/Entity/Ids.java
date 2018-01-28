@@ -62,4 +62,5 @@ public class Ids implements Serializable {
     public void setTrakt(int trakt) {
         this.trakt = trakt;
     }
+
 }
