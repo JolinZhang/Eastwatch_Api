@@ -24,18 +24,24 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.concurrent.*;
+
+import static com.eastwatch.api.Serialization.gsonDeserialization;
+import static com.eastwatch.api.Serialization.gsonSerialization;
 
 /**
  * Created by Jonelezhang on 1/14/18.
  */
 @Path("/images")
-public class Pictures extends JedisConnection{
+public class Pictures extends JedisConnection {
 
     private JedisPool jedisPool;
 
-    private Client client;
+    private Client client1;
 
-    public Pictures(){
+    private Client client2;
+
+    public Pictures() {
         jedisPool = JedisConnection.getInstance();
     }
 
@@ -44,10 +50,11 @@ public class Pictures extends JedisConnection{
     // The Java method will produce content identified by the MIME Media type "Application_JSON"
     @Produces({MediaType.APPLICATION_JSON})
 
-    public EpisodeImageList  getAllEpisodePics(@QueryParam("tv") int tv, @QueryParam("season") int season) {
+    public EpisodeImageList getAllEpisodePics(@QueryParam("tv") int tv, @QueryParam("season") int season) {
 
         //api request get episode count info
-        client = ClientBuilder.newClient();
+        client1 = ClientBuilder.newClient();
+        client2 = ClientBuilder.newClient();
         TmdbInfo tmdbInfo = apiTmdbInfo(tv, season);
         String[] result = new String[tmdbInfo.getEpisodeCount()];
         List<Integer> noCacheImageList = new ArrayList<>();
@@ -87,39 +94,70 @@ public class Pictures extends JedisConnection{
 
     /**
      * Api request to get show's tmdb and number of episodes
-     * */
+     */
 
     public TmdbInfo apiTmdbInfo(int tv, int season){
-        //Api request to get shows info
-        ShowInfo showResponse = client.target("https://api.trakt.tv/shows/" + tv)
-                .request(MediaType.APPLICATION_JSON)
-                .header("trakt-api-version", 2)
-                .header("trakt-api-key", "3acd1e398e8b01e184c6e0b40a21706db046194e976cdc5ba8237d552ee64fc6")
-                .get(ShowInfo.class);
-        int tmdb = showResponse.getIds().getTmdb();
+        //Concurrency
+        int tmdb = 0;
+        int numberOfEpisodes = 0;
+        try {
+            int threadNum = 2;
+            ExecutorService executor = Executors.newFixedThreadPool(threadNum);
+            List<FutureTask<Integer>> taskList = new ArrayList<FutureTask<Integer>>();
 
-        //Api requst to get all episodes info in season
-        List<EpisodeInfo> episodeResponse = client.target("https://api.trakt.tv/shows/" + tv + "/seasons/" + season)
-                .request(MediaType.APPLICATION_JSON)
-                .header("trakt-api-version", 2)
-                .header("trakt-api-key", "3acd1e398e8b01e184c6e0b40a21706db046194e976cdc5ba8237d552ee64fc6")
-                .get(new GenericType<List<EpisodeInfo>>() {
-                });
-        int numberOfEpisodes = episodeResponse.size();
+            // Start thread for the first half of the numbers
+            FutureTask<Integer> futureTask_1 = new FutureTask<Integer>(new Callable<Integer>() {
+                @Override
+                public Integer call() {
+                    //Api request to get shows info
+                    ShowInfo showResponse = client1.target("https://api.trakt.tv/shows/" + tv)
+                            .request(MediaType.APPLICATION_JSON)
+                            .header("trakt-api-version", 2)
+                            .header("trakt-api-key", "3acd1e398e8b01e184c6e0b40a21706db046194e976cdc5ba8237d552ee64fc6")
+                            .get(ShowInfo.class);
+                    return showResponse.getIds().getTmdb();
+                }
+            });
+            taskList.add(futureTask_1);
+            executor.execute(futureTask_1);
+
+            // Start thread for the second half of the numbers
+            FutureTask<Integer> futureTask_2 = new FutureTask<Integer>(new Callable<Integer>() {
+                @Override
+                public Integer call() {
+                    //Api requst to get all episodes info in season
+                    List<EpisodeInfo> episodeResponse = client2.target("https://api.trakt.tv/shows/" + tv + "/seasons/" + season)
+                            .request(MediaType.APPLICATION_JSON)
+                            .header("trakt-api-version", 2)
+                            .header("trakt-api-key", "3acd1e398e8b01e184c6e0b40a21706db046194e976cdc5ba8237d552ee64fc6")
+                            .get(new GenericType<List<EpisodeInfo>>() {
+                            });
+                    return episodeResponse.size();
+                }
+            });
+            taskList.add(futureTask_2);
+            executor.execute(futureTask_2);
+            tmdb = taskList.get(0).get();
+            numberOfEpisodes = taskList.get(1).get();
+            executor.shutdown();
+        } catch (InterruptedException e) {
+            throw new IllegalStateException(e);
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
         return new TmdbInfo(tv, tmdb, season, numberOfEpisodes);
-
     }
 
     /**
      * Api requst to get imgs info for all episode under a season.
-     * */
-    public Map<Integer, Map<String, String>> appImagesList(TmdbInfo tmdbInfo, List<Integer> episodeIds){
+     */
+    public Map<Integer, Map<String, String>> appImagesList(TmdbInfo tmdbInfo, List<Integer> episodeIds) {
         //Api request for getting each episode image info
         String key = "94ca141ea826a21f5802fc9dae837698";
         Map<Integer, Map<String, String>> result = new HashMap<>();
 
-        for(int i : episodeIds){
-            EpisodeImage imageResponse = client.target("https://api.themoviedb.org/3/tv/" + tmdbInfo.getTmdb() +
+        for (int i : episodeIds) {
+            EpisodeImage imageResponse = client1.target("https://api.themoviedb.org/3/tv/" + tmdbInfo.getTmdb() +
                     "/season/" + tmdbInfo.getSeason() + "/episode/" + i + "/images")
                     .queryParam("api_key", key)
                     .request(MediaType.APPLICATION_JSON)
@@ -127,69 +165,11 @@ public class Pictures extends JedisConnection{
                     .header("trakt-api-key", "3acd1e398e8b01e184c6e0b40a21706db046194e976cdc5ba8237d552ee64fc6")
                     .get(EpisodeImage.class);
             imageResponse.setEpisodeId(i);
-            String jedisKey = Integer.toString(tmdbInfo.getTv())+"#"+Integer.toString(tmdbInfo.getSeason())+"#"+ Integer.toString(i);
-            Map<String, String>  temp = new HashMap<>();
+            String jedisKey = Integer.toString(tmdbInfo.getTv()) + "#" + Integer.toString(tmdbInfo.getSeason()) + "#" + Integer.toString(i);
+            Map<String, String> temp = new HashMap<>();
             temp.put(jedisKey, gsonSerialization(imageResponse));
             result.put(i, temp);
         }
         return result;
     }
-
-
-    /**
-     * Use Gson library to serialize an object to string
-     */
-
-    public <T>String gsonSerialization(T myObject){
-        Gson gson = new Gson();
-        Type type = new TypeToken<T>() {}.getType();
-        String json = gson.toJson(myObject, type);
-        return json;
-    }
-
-    /**
-     * Use Gson library to deserialize a string to object
-     * */
-    public <T> T gsonDeserialization(T myobject, String json){
-        Gson gson = new Gson();
-        Type type = new TypeToken<T>() {}.getType();
-        T fromJson = gson.fromJson(json, type);
-        return fromJson;
-    }
-
-    /**
-    * serialize of an object to string
-    * */
-    public String serialization(EpisodeImage myObject){
-        String serializedObject = "";
-
-        // serialize the object
-        try {
-            ByteArrayOutputStream bo = new ByteArrayOutputStream();
-            ObjectOutputStream so = new ObjectOutputStream(bo);
-            so.writeObject(myObject);
-            so.flush();
-            serializedObject = bo.toString("ISO-8859-1");
-        } catch (Exception e) {
-            System.out.println(e);
-        }
-        return serializedObject;
-    }
-
-    /**
-    * Descrialization of a string to an object
-    * */
-    public <T> T deserialization(String serializedObject){
-        T obj = null;
-        try {
-            byte b[] = serializedObject.getBytes("ISO-8859-1");
-            ByteArrayInputStream bi = new ByteArrayInputStream(b);
-            ObjectInputStream si = new ObjectInputStream(bi);
-            obj = (T) si.readObject();
-        } catch (Exception e) {
-            System.out.println(e);
-        }
-        return obj;
-    }
-
 }
